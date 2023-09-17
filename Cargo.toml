@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "aincradfs-win",
-    "aincradfs-lang"
+    "aincradfs-lang",
+    "aincradfs-path"
 ]
 
