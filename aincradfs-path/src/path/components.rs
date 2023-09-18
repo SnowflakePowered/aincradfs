@@ -1,8 +1,7 @@
-use std::cmp;
 use std::hash::{Hash, Hasher};
 use std::ops::Index;
 use std::slice::SliceIndex;
-use crate::path::PathStr;
+use crate::path::{Path, PathStr};
 
 
 /// Component parsing works by a double-ended state machine; the cursors at the
@@ -19,7 +18,7 @@ pub enum State {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub enum Component<'a, Str: ?Sized> {
+pub enum Component<'a, P: Path + ?Sized> {
     /// The root directory component, appears after any prefix and before anything else.
     ///
     /// It represents a separator that designates that a path starts from root.
@@ -35,14 +34,14 @@ pub enum Component<'a, Str: ?Sized> {
     ///
     /// This variant is the most common one, it represents references to files
     /// or directories.
-    Normal(&'a Str),
+    Normal(&'a P::Str),
 }
 
 #[derive(Clone)]
 #[must_use = "iterators are lazy and do nothing unless consumed"]
-pub struct Components<'a, Str: PathStr + ?Sized> {
+pub struct Components<'a, P: Path + ?Sized> {
     // The path left to parse components from
-    pub(crate) path: &'a Str,
+    pub(crate) path: &'a P::Str,
     pub(crate) has_root: bool,
     // The iterator is double-ended, and these two states keep track of what has
     // been produced from either end
@@ -50,20 +49,20 @@ pub struct Components<'a, Str: PathStr + ?Sized> {
     pub(crate) back: State,
 }
 
-impl<'a, Str: PathStr + ?Sized> Components<'a, Str>
+impl<'a, P: Path + ?Sized> Components<'a, P>
 {
     // parse a given byte sequence following the OsStr encoding into the
     // corresponding path component
-    fn parse_single_component(&self, comp: &'a Str) -> Option<Component<'a, Str>> {
+    fn parse_single_component(&self, comp: &'a P::Str) -> Option<Component<'a, P>> {
 
         // . components are normalized away, except at
         // the beginning of a path, which is treated
         // separately via `include_cur_dir`
-        if comp == Str::CURRENT_DIR {
+        if comp == P::CURRENT_DIR {
             return None
         };
 
-        if comp == Str::PARENT_DIR {
+        if comp == P::PARENT_DIR {
             return Some(Component::Parent)
         };
 
@@ -89,11 +88,11 @@ impl<'a, Str: PathStr + ?Sized> Components<'a, Str>
 
     // parse a component from the left, saying how many bytes to consume to
     // remove the component
-    fn parse_next_component(&self) -> (usize, Option<Component<'a, Str>>) {
+    fn parse_next_component(&self) -> (usize, Option<Component<'a, P>>) {
         debug_assert!(self.front == State::Body);
-        let (extra, comp) = match self.path.as_slice().iter().position(|b| Str::is_separator(*b)) {
+        let (extra, comp) = match self.path.as_slice().iter().position(|b| P::Str::is_separator(*b)) {
             None => (0, self.path),
-            Some(i) => (1,  Str::from_slice(&self.path.as_slice()[..i])),
+            Some(i) => (1,  P::Str::from_slice(&self.path.as_slice()[..i])),
         };
         // SAFETY: `comp` is a valid substring, since it is split on a separator.
         (comp.len() + extra, unsafe { self.parse_single_component(comp) })
@@ -101,12 +100,12 @@ impl<'a, Str: PathStr + ?Sized> Components<'a, Str>
 
     // parse a component from the right, saying how many bytes to consume to
     // remove the component
-    fn parse_next_component_back(&self) -> (usize, Option<Component<'a, Str>>) {
+    fn parse_next_component_back(&self) -> (usize, Option<Component<'a, P>>) {
         debug_assert!(self.back == State::Body);
         let start = self.len_before_body();
-        let (extra, comp) = match self.path.as_slice()[start..].iter().rposition(|b| Str::is_separator(*b)) {
-            None => (0, Str::from_slice(&self.path.as_slice()[start..])),
-            Some(i) => (1, Str::from_slice(&self.path.as_slice()[start + i + 1..])),
+        let (extra, comp) = match self.path.as_slice()[start..].iter().rposition(|b| P::Str::is_separator(*b)) {
+            None => (0, P::Str::from_slice(&self.path.as_slice()[start..])),
+            Some(i) => (1, P::Str::from_slice(&self.path.as_slice()[start + i + 1..])),
         };
         // SAFETY: `comp` is a valid substring, since it is split on a separator.
         (comp.len() + extra, unsafe { self.parse_single_component(comp) })
@@ -119,7 +118,7 @@ impl<'a, Str: PathStr + ?Sized> Components<'a, Str>
             if comp.is_some() {
                 return;
             } else {
-                self.path = Str::from_slice(&self.path.as_slice()[size..]);
+                self.path = P::Str::from_slice(&self.path.as_slice()[size..]);
             }
         }
     }
@@ -131,7 +130,7 @@ impl<'a, Str: PathStr + ?Sized> Components<'a, Str>
             if comp.is_some() {
                 return;
             } else {
-                self.path = Str::from_slice(&self.path.as_slice()[..self.path.len() - size]);
+                self.path = P::Str::from_slice(&self.path.as_slice()[..self.path.len() - size]);
             }
         }
     }
@@ -143,37 +142,37 @@ impl<'a, Str: PathStr + ?Sized> Components<'a, Str>
             return false;
         }
         let mut iter = self.path.as_slice().iter();
-        let current_dir = &Str::as_slice(Str::CURRENT_DIR)[0];
+        let current_dir = &P::Str::as_slice(P::CURRENT_DIR)[0];
 
         match (iter.next(), iter.next()) {
             (Some(c), None) if c == current_dir => true,
-            (Some(c), Some(&b)) if c == current_dir => Str::is_separator(b),
+            (Some(c), Some(&b)) if c == current_dir => P::Str::is_separator(b),
             _ => false,
         }
     }
 }
 
-impl<'a, Str: PathStr + ?Sized> Iterator for Components<'a, Str> {
-    type Item = Component<'a, Str>;
+impl<'a, P: Path + ?Sized> Iterator for Components<'a, P> {
+    type Item = Component<'a, P>;
 
-    fn next(&mut self) -> Option<Component<'a, Str>> {
+    fn next(&mut self) -> Option<Component<'a, P>> {
         while !self.finished() {
             match self.front {
                 State::StartDir => {
                     self.front = State::Body;
                     if self.has_root {
                         debug_assert!(!self.path.is_empty());
-                        self.path = Str::from_slice(&self.path.as_slice()[1..]);
+                        self.path = P::Str::from_slice(&self.path.as_slice()[1..]);
                         return Some(Component::Root);
                     } else if self.include_cur_dir() {
                         debug_assert!(!self.path.is_empty());
-                        self.path = Str::from_slice(&self.path.as_slice()[1..]);
+                        self.path = P::Str::from_slice(&self.path.as_slice()[1..]);
                         return Some(Component::Current);
                     }
                 }
                 State::Body if !self.path.is_empty() => {
                     let (size, comp) = self.parse_next_component();
-                    self.path = Str::from_slice(&self.path.as_slice()[size..]);
+                    self.path = P::Str::from_slice(&self.path.as_slice()[size..]);
                     if comp.is_some() {
                         return comp;
                     }
@@ -188,13 +187,13 @@ impl<'a, Str: PathStr + ?Sized> Iterator for Components<'a, Str> {
     }
 }
 
-impl<'a, Str: PathStr> DoubleEndedIterator for Components<'a, Str> {
-    fn next_back(&mut self) -> Option<Component<'a, Str>> {
+impl<'a, P: Path + ?Sized> DoubleEndedIterator for Components<'a, P> {
+    fn next_back(&mut self) -> Option<Component<'a, P>> {
         while !self.finished() {
             match self.back {
                 State::Body if self.path.len() > self.len_before_body() => {
                     let (size, comp) = self.parse_next_component_back();
-                    self.path = Str::from_slice(&self.path.as_slice()[..self.path.len() - size]);
+                    self.path = P::Str::from_slice(&self.path.as_slice()[..self.path.len() - size]);
                     if comp.is_some() {
                         return comp;
                     }
@@ -205,10 +204,10 @@ impl<'a, Str: PathStr> DoubleEndedIterator for Components<'a, Str> {
                 State::StartDir => {
                     self.back = State::Done;
                     if self.has_root {
-                        self.path = Str::from_slice(&self.path.as_slice()[..self.path.len() - 1]);
+                        self.path = P::Str::from_slice(&self.path.as_slice()[..self.path.len() - 1]);
                         return Some(Component::Root);
                     } else if self.include_cur_dir() {
-                        self.path = Str::from_slice(&self.path.as_slice()[..self.path.len() - 1]);
+                        self.path = P::Str::from_slice(&self.path.as_slice()[..self.path.len() - 1]);
                         return Some(Component::Current);
                     }
                 }
@@ -224,7 +223,7 @@ mod test {
     use crate::path::Path;
     use crate::path::u16path::{ U16PathBuf};
     use crate::path::u8path::U8PathBuf;
-
+    //
     #[test]
     pub fn test_wstr() {
         let path = U16PathBuf::from("./test/my/./../help//");

@@ -3,6 +3,7 @@ use std::mem::ManuallyDrop;
 use std::ops::{Deref, Index};
 use std::slice::SliceIndex;
 use bstr::{BStr, BString, ByteSlice, ByteVec};
+use qp_trie::Break;
 use widestring::{U16Str, u16str, U16String};
 use crate::path::components::{Component, Components};
 
@@ -20,10 +21,6 @@ pub trait PathBuf {
 
 pub trait PathStr: 'static + PartialEq
 {
-    const CURRENT_DIR: &'static Self;
-    const PARENT_DIR: &'static Self;
-    const SEPARATOR: &'static Self;
-
     type ComponentType: Copy + PartialEq;
 
     fn is_separator(t: Self::ComponentType) -> bool;
@@ -34,10 +31,6 @@ pub trait PathStr: 'static + PartialEq
 }
 
 impl PathStr for U16Str {
-    const CURRENT_DIR: &'static U16Str = u16str!(".");
-    const PARENT_DIR: &'static U16Str = u16str!("..");
-    const SEPARATOR: &'static U16Str = u16str!("/");
-
     type ComponentType = u16;
     fn is_separator(t: Self::ComponentType) -> bool {
         [b'/' as u16, b'\\' as u16].contains(&t)
@@ -62,17 +55,9 @@ impl PathStr for U16Str {
 
 
 
-#[inline]
-const fn bstr_literal(x: &[u8]) -> &BStr {
-    unsafe { core::mem::transmute(x) }
-}
 
 impl PathStr for BStr {
-    const CURRENT_DIR: &'static BStr = bstr_literal(b".");
-    const PARENT_DIR: &'static BStr = bstr_literal(b"..");
-    const SEPARATOR: &'static BStr = bstr_literal(b"/");
     type ComponentType = u8;
-
     fn is_separator(t: Self::ComponentType) -> bool {
         [b'/', b'\\'].contains(&t)
     }
@@ -94,18 +79,26 @@ impl PathStr for BStr {
     }
 }
 
-pub trait PathOwned<Str: PathStr> {
+pub trait PathOwned: Break {
+    type Str: PathStr;
     fn new() -> Self;
-    fn push(&mut self, component: &Str);
+    fn push(&mut self, component: &Self::Str);
     fn pop(&mut self);
 }
 
-pub trait Path<Str: PathStr + ?Sized>
+pub trait Path
 {
+    type Str: PathStr + ?Sized;
+
+    const CURRENT_DIR: &'static Self::Str;
+    const PARENT_DIR: &'static Self::Str;
+    const SEPARATOR: &'static Self::Str;
+
+
     fn root() -> &'static Self;
 
     fn has_root(&self) -> bool;
-    fn components(&self) -> Components<Str>;
+    fn components(&self) -> Components<Self>;
 
 
 }
