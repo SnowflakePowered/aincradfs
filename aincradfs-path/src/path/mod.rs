@@ -19,7 +19,7 @@ pub trait PathBuf {
     fn pop(&mut self);
 }
 
-pub trait PathStr: 'static + PartialEq
+pub(crate) trait PathStr: 'static + PartialEq
 {
     type ComponentType: Copy + PartialEq;
 
@@ -52,9 +52,6 @@ impl PathStr for U16Str {
         U16Str::from_slice(slice)
     }
 }
-
-
-
 
 impl PathStr for BStr {
     type ComponentType = u8;
