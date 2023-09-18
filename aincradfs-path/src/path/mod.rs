@@ -3,6 +3,7 @@ use std::mem::ManuallyDrop;
 use std::ops::{Deref, Index};
 use std::slice::SliceIndex;
 use bstr::{BStr, BString, ByteSlice, ByteVec};
+use bytemuck::Pod;
 use qp_trie::Break;
 use widestring::{U16Str, u16str, U16String};
 use crate::path::components::{Component, Components};
@@ -10,6 +11,9 @@ use crate::path::components::{Component, Components};
 mod u8path;
 mod u16path;
 mod components;
+
+pub use u8path::{U8PathBuf, U8Path};
+pub use u16path::{U16PathBuf, U16Path};
 
 pub trait PathBuf {
     fn new() -> Self;
@@ -21,7 +25,7 @@ pub trait PathBuf {
 
 pub(crate) trait PathStr: 'static + PartialEq
 {
-    type ComponentType: Copy + PartialEq;
+    type ComponentType: Copy + PartialEq + Pod;
 
     fn is_separator(t: Self::ComponentType) -> bool;
     fn as_slice(&self) -> &[Self::ComponentType];
@@ -76,10 +80,11 @@ impl PathStr for BStr {
     }
 }
 
-pub trait PathOwned: Break {
-    type Str: PathStr;
+pub trait PathOwned: Break + Clone + Borrow<[u8]> {
+    type Borrowed: Path + ?Sized;
+
     fn new() -> Self;
-    fn push(&mut self, component: &Self::Str);
+    fn push(&mut self, component: &<Self::Borrowed as Path>::Str);
     fn pop(&mut self);
 }
 
@@ -91,11 +96,10 @@ pub trait Path
     const PARENT_DIR: &'static Self::Str;
     const SEPARATOR: &'static Self::Str;
 
-
     fn root() -> &'static Self;
-
     fn has_root(&self) -> bool;
     fn components(&self) -> Components<Self>;
 
+    fn from_str(str: &Self::Str) -> &Self;
 
 }

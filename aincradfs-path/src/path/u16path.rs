@@ -3,10 +3,10 @@ use std::ops::Deref;
 use qp_trie::Break;
 use widestring::{U16Str, u16str, U16String};
 use crate::path::components::{Components, State};
-use crate::path::{Path, PathOwned, PathStr};
+use crate::path::{Path, PathOwned, PathStr, U8PathBuf};
 
 #[repr(transparent)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct U16PathBuf(U16String);
 
 #[repr(transparent)]
@@ -76,6 +76,17 @@ impl Path for U16Path {
             back: State::Body,
         }
     }
+
+    fn from_str(str: &Self::Str) -> &Self {
+        // SAFETY: U16Path is repr(transparent) with U16Str
+        unsafe { std::mem::transmute(str) }
+    }
+}
+
+impl Borrow<[u8]> for U16Path {
+    fn borrow(&self) -> &[u8] {
+        bytemuck::cast_slice(&self.0.as_slice())
+    }
 }
 
 impl Borrow<<Self as Break>::Split> for U16PathBuf {
@@ -93,5 +104,21 @@ impl Break for U16PathBuf {
 
     fn find_break(&self, loc: usize) -> &Self::Split {
         &<Self as Borrow<[u8]>>::borrow(self)[..loc]
+    }
+}
+
+impl PathOwned for U16PathBuf {
+    type Borrowed = U16Path;
+    fn new() -> Self {
+        Self(U16String::new())
+    }
+
+    fn push(&mut self, component: &<Self::Borrowed as Path>::Str) {
+        todo!()
+    }
+
+
+    fn pop(&mut self) {
+        todo!()
     }
 }
