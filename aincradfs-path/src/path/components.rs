@@ -1,8 +1,7 @@
 use std::hash::{Hash, Hasher};
-use std::ops::Index;
-use std::slice::SliceIndex;
-use crate::path::{Path, PathStr};
+use std::iter::FusedIterator;
 
+use crate::path::{Path, PathStr};
 
 /// Component parsing works by a double-ended state machine; the cursors at the
 /// front and back of the path each keep track of what parts of the path have
@@ -36,8 +35,6 @@ pub enum Component<'a, P: Path + ?Sized> {
     /// or directories.
     Normal(&'a P::Str),
 }
-
-#[derive(Clone)]
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 pub struct Components<'a, P: Path + ?Sized> {
     // The path left to parse components from
@@ -49,25 +46,34 @@ pub struct Components<'a, P: Path + ?Sized> {
     pub(crate) back: State,
 }
 
-impl<'a, P: Path + ?Sized> Components<'a, P>
-{
+impl<'a, P: Path + ?Sized> Clone for Components<'a, P> {
+    fn clone(&self) -> Self {
+        Self {
+            path: self.path,
+            has_root: self.has_root,
+            front: self.front.clone(),
+            back: self.back.clone(),
+        }
+    }
+}
+
+impl<'a, P: Path + ?Sized> Components<'a, P> {
     // parse a given byte sequence following the OsStr encoding into the
     // corresponding path component
     fn parse_single_component(&self, comp: &'a P::Str) -> Option<Component<'a, P>> {
-
         // . components are normalized away, except at
         // the beginning of a path, which is treated
         // separately via `include_cur_dir`
         if comp == P::CURRENT_DIR {
-            return None
+            return None;
         };
 
         if comp == P::PARENT_DIR {
-            return Some(Component::Parent)
+            return Some(Component::Parent);
         };
 
         if comp.is_empty() {
-            return None
+            return None;
         }
 
         Some(Component::Normal(comp))
@@ -81,8 +87,16 @@ impl<'a, P: Path + ?Sized> Components<'a, P>
     // Given the iteration so far, how much of the pre-State::Body path is left?
     #[inline]
     fn len_before_body(&self) -> usize {
-        let root = if self.front <= State::StartDir && self.has_root { 1 } else { 0 };
-        let cur_dir = if self.front <= State::StartDir && self.include_cur_dir() { 1 } else { 0 };
+        let root = if self.front <= State::StartDir && self.has_root {
+            1
+        } else {
+            0
+        };
+        let cur_dir = if self.front <= State::StartDir && self.include_cur_dir() {
+            1
+        } else {
+            0
+        };
         root + cur_dir
     }
 
@@ -90,12 +104,19 @@ impl<'a, P: Path + ?Sized> Components<'a, P>
     // remove the component
     fn parse_next_component(&self) -> (usize, Option<Component<'a, P>>) {
         debug_assert!(self.front == State::Body);
-        let (extra, comp) = match self.path.as_slice().iter().position(|b| P::Str::is_separator(*b)) {
+        let (extra, comp) = match self
+            .path
+            .as_slice()
+            .iter()
+            .position(|b| P::is_separator(*b))
+        {
             None => (0, self.path),
-            Some(i) => (1,  P::Str::from_slice(&self.path.as_slice()[..i])),
+            Some(i) => (1, P::Str::from_slice(&self.path.as_slice()[..i])),
         };
         // SAFETY: `comp` is a valid substring, since it is split on a separator.
-        (comp.len() + extra, unsafe { self.parse_single_component(comp) })
+        (comp.len() + extra, unsafe {
+            self.parse_single_component(comp)
+        })
     }
 
     // parse a component from the right, saying how many bytes to consume to
@@ -103,12 +124,20 @@ impl<'a, P: Path + ?Sized> Components<'a, P>
     fn parse_next_component_back(&self) -> (usize, Option<Component<'a, P>>) {
         debug_assert!(self.back == State::Body);
         let start = self.len_before_body();
-        let (extra, comp) = match self.path.as_slice()[start..].iter().rposition(|b| P::Str::is_separator(*b)) {
+        let (extra, comp) = match self.path.as_slice()[start..]
+            .iter()
+            .rposition(|b| P::is_separator(*b))
+        {
             None => (0, P::Str::from_slice(&self.path.as_slice()[start..])),
-            Some(i) => (1, P::Str::from_slice(&self.path.as_slice()[start + i + 1..])),
+            Some(i) => (
+                1,
+                P::Str::from_slice(&self.path.as_slice()[start + i + 1..]),
+            ),
         };
         // SAFETY: `comp` is a valid substring, since it is split on a separator.
-        (comp.len() + extra, unsafe { self.parse_single_component(comp) })
+        (comp.len() + extra, unsafe {
+            self.parse_single_component(comp)
+        })
     }
 
     // trim away repeated separators (i.e., empty components) on the left
@@ -135,7 +164,6 @@ impl<'a, P: Path + ?Sized> Components<'a, P>
         }
     }
 
-
     /// Should the normalized path include a leading . ?
     fn include_cur_dir(&self) -> bool {
         if self.has_root {
@@ -146,7 +174,7 @@ impl<'a, P: Path + ?Sized> Components<'a, P>
 
         match (iter.next(), iter.next()) {
             (Some(c), None) if c == current_dir => true,
-            (Some(c), Some(&b)) if c == current_dir => P::Str::is_separator(b),
+            (Some(c), Some(&b)) if c == current_dir => P::is_separator(b),
             _ => false,
         }
     }
@@ -204,10 +232,12 @@ impl<'a, P: Path + ?Sized> DoubleEndedIterator for Components<'a, P> {
                 State::StartDir => {
                     self.back = State::Done;
                     if self.has_root {
-                        self.path = P::Str::from_slice(&self.path.as_slice()[..self.path.len() - 1]);
+                        self.path =
+                            P::Str::from_slice(&self.path.as_slice()[..self.path.len() - 1]);
                         return Some(Component::Root);
                     } else if self.include_cur_dir() {
-                        self.path = P::Str::from_slice(&self.path.as_slice()[..self.path.len() - 1]);
+                        self.path =
+                            P::Str::from_slice(&self.path.as_slice()[..self.path.len() - 1]);
                         return Some(Component::Current);
                     }
                 }
@@ -218,11 +248,41 @@ impl<'a, P: Path + ?Sized> DoubleEndedIterator for Components<'a, P> {
     }
 }
 
+impl<'a, P: Path + ?Sized> FusedIterator for Components<'a, P> {}
+
+impl<'a, P: Path + ?Sized> PartialEq for Components<'a, P> {
+    #[inline]
+    fn eq(&self, other: &Components<'a, P>) -> bool {
+        // Fast path for exact matches, e.g. for hashmap lookups.
+        // Don't explicitly compare the prefix or has_physical_root fields since they'll
+        // either be covered by the `path` buffer or are only relevant for `prefix_verbatim()`.
+        if self.path.len() == other.path.len()
+            && self.front == other.front
+            && self.back == State::Body
+            && other.back == State::Body
+        {
+            // possible future improvement: this could bail out earlier if there were a
+            // reverse memcmp/bcmp comparing back to front
+            if self.path == other.path {
+                return true;
+            }
+        }
+
+        let self_c = Components::clone(self);
+        let other_c = Components::clone(other);
+
+        // compare back to front since absolute paths often share long prefixes
+        Iterator::eq(self_c.rev(), other_c.rev())
+    }
+}
+
+impl<'a, P: Path + ?Sized> Eq for Components<'_, P> {}
+
 #[cfg(test)]
 mod test {
-    use crate::path::Path;
-    use crate::path::u16path::{ U16PathBuf};
+    use crate::path::u16path::U16PathBuf;
     use crate::path::u8path::U8PathBuf;
+    use crate::path::Path;
     //
     #[test]
     pub fn test_wstr() {
@@ -240,5 +300,21 @@ mod test {
         for component in path.components() {
             println!("{:?}", component);
         }
+    }
+
+    #[test]
+    pub fn test_eq() {
+        let path = U16PathBuf::from("./test/my/./help//");
+        let path2 = U16PathBuf::from("./test/my/help/");
+
+        assert_eq!(path, path2)
+    }
+
+    #[test]
+    pub fn test_eq_pathsep() {
+        let path = U16PathBuf::from("./test/my\\help/");
+        let path2 = U16PathBuf::from("./test/my/help/");
+
+        assert_eq!(path, path2)
     }
 }

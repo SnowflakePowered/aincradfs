@@ -5,3 +5,4 @@ members = [
     "aincradfs-path"
 ]
 
+resolver = "2"

@@ -91,8 +91,8 @@ impl Deref for OwnedProjectedPath {
 }
 
 impl<T> From<T> for OwnedProjectedPath
-    where
-        T: AsRef<OsStr>,
+where
+    T: AsRef<OsStr>,
 {
     fn from(s: T) -> Self {
         OwnedProjectedPath(s.as_ref().to_os_string())
