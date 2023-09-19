@@ -1,3 +1,3 @@
-mod old_path;
-mod path;
-mod trie;
+pub mod path;
+pub mod trie;
+

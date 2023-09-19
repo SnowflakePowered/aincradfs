@@ -1,4 +1,4 @@
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 use std::iter::FusedIterator;
 
 use crate::path::{Path, PathStr};
@@ -10,7 +10,7 @@ use crate::path::{Path, PathStr};
 /// Going front to back, a path is made up of a prefix, a starting
 /// directory component, and a body (of normal components)
 #[derive(Copy, Clone, PartialEq, PartialOrd, Debug)]
-pub enum State {
+pub(crate) enum State {
     StartDir = 0, // / or . or nothing
     Body = 1,     // foo/bar/baz
     Done = 2,
@@ -113,10 +113,7 @@ impl<'a, P: Path + ?Sized> Components<'a, P> {
             None => (0, self.path),
             Some(i) => (1, P::Str::from_slice(&self.path.as_slice()[..i])),
         };
-        // SAFETY: `comp` is a valid substring, since it is split on a separator.
-        (comp.len() + extra, unsafe {
-            self.parse_single_component(comp)
-        })
+        (comp.len() + extra, self.parse_single_component(comp))
     }
 
     // parse a component from the right, saying how many bytes to consume to
@@ -134,10 +131,7 @@ impl<'a, P: Path + ?Sized> Components<'a, P> {
                 P::Str::from_slice(&self.path.as_slice()[start + i + 1..]),
             ),
         };
-        // SAFETY: `comp` is a valid substring, since it is split on a separator.
-        (comp.len() + extra, unsafe {
-            self.parse_single_component(comp)
-        })
+        (comp.len() + extra, self.parse_single_component(comp))
     }
 
     // trim away repeated separators (i.e., empty components) on the left
@@ -177,6 +171,17 @@ impl<'a, P: Path + ?Sized> Components<'a, P> {
             (Some(c), Some(&b)) if c == current_dir => P::is_separator(b),
             _ => false,
         }
+    }
+
+    pub fn as_path(&self) -> &'a P {
+        let mut comps = self.clone();
+        if comps.front == State::Body {
+            comps.trim_left();
+        }
+        if comps.back == State::Body {
+            comps.trim_right();
+        }
+        P::from_str(comps.path)
     }
 }
 

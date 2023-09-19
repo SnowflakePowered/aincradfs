@@ -1,7 +1,6 @@
 use std::borrow::Borrow;
 
-use crate::path::components::Components;
-use bstr::{BStr, ByteSlice, ByteVec};
+use bstr::{BStr, ByteSlice};
 use bytemuck::Pod;
 use qp_trie::Break;
 use widestring::U16Str;
@@ -12,6 +11,7 @@ mod u8path;
 
 pub use u16path::{U16Path, U16PathBuf};
 pub use u8path::{U8Path, U8PathBuf};
+pub use components::{Components, Component};
 
 pub trait PathBuf {
     fn new() -> Self;
@@ -22,7 +22,7 @@ pub trait PathBuf {
     fn pop(&mut self);
 }
 
-pub(crate) trait PathStr: 'static + PartialEq {
+pub trait PathStr: 'static + PartialEq {
     type ComponentType: Copy + PartialEq + Pod;
 
     fn as_slice(&self) -> &[Self::ComponentType];
